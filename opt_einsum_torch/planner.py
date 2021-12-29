@@ -57,6 +57,13 @@ class EinsumPlanner:
             reserved, humanize.naturalsize(reserved, binary=True),
             allocated, humanize.naturalsize(allocated, binary=True),
         )
+        if total - allocated < self.cuda_mem_limit:
+            logger.warning(
+                "CUDA device %r has less free memory (%s) than expected (%s), "
+                "did you have other tensors in your application?",
+                self.cuda_device,
+                humanize.naturalsize(total - allocated, binary=True),
+                humanize.naturalsize(self.cuda_mem_limit, binary=True))
 
     def find_optimal_divide(
             self,
@@ -146,7 +153,9 @@ class EinsumPlanner:
         transfer_size = 0
         for array, plan in zip(arrays, plans):
             assert plan in {TENSOR_LOCATION_CUDA, TENSOR_LOCATION_CPU}, \
-                "plan must be full or partial"
+                "plan must be '%s' or '%s'" % (
+                    TENSOR_LOCATION_CUDA, TENSOR_LOCATION_CPU
+                )
             if id(array) in tensor_by_id:
                 continue
 
@@ -179,9 +188,9 @@ class EinsumPlanner:
                         tuple(torch_array.shape), str(torch_array.dtype),
                         self.cuda_device)
                 elif plan == TENSOR_LOCATION_CPU:
-                    logger.debug(
+                    logger.warning(
                         "You provided a tensor(%r, dtype=%s) on device %r, "
-                        "which is expected to be partially on CUDA. This "
+                        "which is not expected to be on GPU. This "
                         "will likely overflow CUDA memory.",
                         tuple(torch_array.shape), str(torch_array.dtype),
                         self.cuda_device)
@@ -254,6 +263,8 @@ class EinsumPlanner:
             path_info=path_info, target_size=self.cuda_mem_limit
         )
         if not need_split:
+            logger.debug(
+                'All tensors fit CUDA memory, going ahead with torch.einsum.')
             return (
                 path, path_info,
                 [TENSOR_LOCATION_CUDA] * len(tensor_shapes),
