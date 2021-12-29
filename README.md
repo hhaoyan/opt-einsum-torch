@@ -4,7 +4,7 @@ There have been many implementations of Einstein's summation. numpy's
 `numpy.einsum` is the least efficient one as it only runs in single thread on 
 CPU. PyTorch's `torch.einsum` works for both CPU and CUDA tensors. However,
 since there is no virtual CUDA memory, `torch.einsum` will run out of CUDA 
-memory large tensors. 
+memory for large tensors. 
 
 This code aims at implementing a memory-efficient `einsum` function using
 PyTorch as the backend. This code also uses the `opt_einsum` package to 
@@ -13,10 +13,12 @@ optimizes the contraction path to achieve the minimal FLOPS.
 ### Usage
 
 ```python
-from opt_einsum_torch import einsum
+from opt_einsum_torch.planner import EinsumPlanner
 import torch
 
-ee = EfficientEinsum(torch.device('cuda:0'))
+# Some huge tensors
+arr1, arr2 = ..., ...
+ee = EinsumPlanner(torch.device('cuda:0'), cuda_mem_limit=0.9)
 result = ee.einsum('ijk,jkl->il', arr1, arr2)
 
 ```
