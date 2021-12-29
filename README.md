@@ -1,2 +1,25 @@
 # opt-einsum-torch
-Optimum einsum using PyTorch that handles large tensors
+
+There have been many implementations of Einstein's summation. numpy's 
+`numpy.einsum` is the least efficient one as it only runs in single thread on 
+CPU. PyTorch's `torch.einsum` works for both CPU and CUDA tensors. However,
+since there is no virtual CUDA memory, `torch.einsum` will run out of CUDA 
+memory large tensors. 
+
+This code aims at implementing a memory-efficient `einsum` function using
+PyTorch as the backend. This code also uses the `opt_einsum` package to 
+optimizes the contraction path to achieve the minimal FLOPS.
+
+### Usage
+
+```python
+from opt_einsum_torch import einsum
+import torch
+
+ee = EfficientEinsum(torch.device('cuda:0'))
+result = ee.einsum('ijk,jkl->il', arr1, arr2)
+
+```
+
+The resulting tensor `result` will be a PyTorch CPU tensor. You could convert
+it into numpy array by simply calling `result.numpy()`.
