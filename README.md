@@ -25,3 +25,9 @@ result = ee.einsum('ijk,jkl->il', arr1, arr2)
 
 The resulting tensor `result` will be a PyTorch CPU tensor. You could convert
 it into numpy array by simply calling `result.numpy()`.
+
+### Future works
+
+- Support multiple GPUs.
+- Memory efficient einsum kernels.
+- CUDA data transfer profilers.
