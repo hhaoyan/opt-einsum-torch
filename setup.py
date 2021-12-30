@@ -1,8 +1,12 @@
 from setuptools import setup, find_packages
+from pathlib import Path
 
 __author__ = 'Haoyan Huo'
 __maintainer__ = 'Haoyan Huo'
 __email__ = 'hhaoyann@gmail.com'
+
+here = Path(__file__).parent
+long_description = (here / "README.md").read_text()
 
 if __name__ == '__main__':
     setup(
@@ -27,5 +31,7 @@ if __name__ == '__main__':
         include_package_data=True,
         version='0.1.0',
         packages=find_packages(),
-        install_requires=open('requirements.txt').readlines()
+        install_requires=open('requirements.txt').readlines(),
+        long_description=long_description,
+        long_description_content_type='text/markdown',
     )
