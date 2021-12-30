@@ -13,7 +13,7 @@ optimizes the contraction path to achieve the minimal FLOPS.
 ### Usage
 
 ```python
-from opt_einsum_torch.planner import EinsumPlanner
+from opt_einsum_torch import EinsumPlanner
 import torch
 
 # Some huge tensors
