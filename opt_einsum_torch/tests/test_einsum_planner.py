@@ -4,12 +4,12 @@ import numpy as np
 import torch
 from opt_einsum.contract import PathInfo
 
-from opt_einsum_torch.planner import EinsumPlanner
+from opt_einsum_torch.planner import EinsumPlanner, TensorStorage
 
 
 class TestEinsumPlanner(unittest.TestCase):
     def test_not_divide(self):
-        einsum = EinsumPlanner(torch.device('cuda:0'), 99760)
+        einsum = EinsumPlanner(torch.device('cuda:0'), 100352)
         einsum_plan = einsum._plan_einsum(
             'ijk,jkl,l->i',
             (10, 10, 20),
@@ -17,7 +17,8 @@ class TestEinsumPlanner(unittest.TestCase):
             (50,),
             dtype_sz=8
         )
-        self.assertListEqual(einsum_plan.tensor_storage, ['full'] * 3)
+        self.assertListEqual(einsum_plan.tensor_storage,
+                             [TensorStorage.CUDA] * 3)
         self.assertIsNone(einsum_plan.split_info)
         self.assertEqual(einsum_plan.mem_required, 99760)
 
@@ -30,8 +31,9 @@ class TestEinsumPlanner(unittest.TestCase):
             (50,),
             dtype_sz=8
         )
-        self.assertListEqual(einsum_plan.tensor_storage,
-                             ['full', 'partial', 'full'])
+        self.assertListEqual(
+            einsum_plan.tensor_storage,
+            [TensorStorage.CUDA, TensorStorage.CPU, TensorStorage.CUDA])
         self.assertTupleEqual(einsum_plan.split_info, ((2, 'l', 37),))
         # 10*20*8+10*20*50*8/50*37+50*8+2*(10*20*8+10*10*8)
         self.assertEqual(einsum_plan.mem_required, 66000)
@@ -40,7 +42,7 @@ class TestEinsumPlanner(unittest.TestCase):
 class TestTensorDivider(unittest.TestCase):
     def test_not_divide(self):
         path_info = PathInfo(
-            None, None, None, None, None, None, 1.,
+            None, '', None, None, None, None, 1.,
             1., [0], {'i': 10, 'j': 10, 'k': 20, 'l': 20})
         einsum = EinsumPlanner(torch.device('cuda:0'), 1024 * 1024)
         divide = einsum.find_optimal_divide(
@@ -57,7 +59,7 @@ class TestTensorDivider(unittest.TestCase):
 
     def test_single_divide(self):
         path_info = PathInfo(
-            None, None, None, None, None, None, 1.,
+            None, '', None, None, None, None, 1.,
             1., [0], {'i': 10, 'j': 10, 'm': 10, 'k': 20, 'l': 20})
         einsum = EinsumPlanner(torch.device('cuda:0'), 1024 * 1024)
 

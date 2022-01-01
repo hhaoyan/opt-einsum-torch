@@ -27,7 +27,7 @@ class EinsumPlan:
     path: List[Tuple[int, ...]]
     path_info: PathInfo
     split_info: Any
-    tensor_storage: List[TensorStorage, ...]
+    tensor_storage: List[TensorStorage]
     mem_required: int
 
 
@@ -80,8 +80,8 @@ class EinsumPlanner:
 
     def find_optimal_divide(
             self,
-            subscripts: List[str, ...],
-            tensors: List[Union[Tensor, np.ndarray, DummyArray], ...],
+            subscripts: List[str],
+            tensors: List[Union[Tensor, np.ndarray, DummyArray]],
             path_info: PathInfo,
             target_size: int
     ) -> Tuple[bool, Tuple[Tuple[int, str, int], ...], int]:
@@ -217,7 +217,7 @@ class EinsumPlanner:
         return gpu_tensors
 
     def _plan_einsum(self, formula: str, *tensor_shapes: Tuple[int, ...],
-                     tensor_ids: Optional[Iterable[int, ...]] = None,
+                     tensor_ids: Optional[Iterable[int]] = None,
                      dtype_sz: int = 4) -> EinsumPlan:
         """
         Make a plan for performing einsum.
