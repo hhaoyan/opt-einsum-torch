@@ -1,6 +1,8 @@
 import itertools
 import logging
-from typing import Union, List, Tuple, Iterable
+from dataclasses import dataclass
+from enum import Enum
+from typing import Union, List, Tuple, Iterable, Optional, Any
 
 import humanize
 import numpy as np
@@ -14,8 +16,19 @@ from opt_einsum_torch.utils import DummyArray, find_largest_intermediates, \
 
 logger = logging.getLogger('OptimalEinsum')
 
-TENSOR_LOCATION_CPU = 'cpu'
-TENSOR_LOCATION_CUDA = 'gpu'
+
+class TensorStorage(Enum):
+    CPU = 'cpu'
+    CUDA = 'gpu'
+
+
+@dataclass
+class EinsumPlan:
+    path: List[Tuple[int, ...]]
+    path_info: PathInfo
+    split_info: Any
+    tensor_storage: List[TensorStorage, ...]
+    mem_required: int
 
 
 class EinsumPlanner:
@@ -67,10 +80,11 @@ class EinsumPlanner:
 
     def find_optimal_divide(
             self,
-            subscripts: List[str],
-            tensors: List[Union[Tensor, np.ndarray, DummyArray]],
+            subscripts: List[str, ...],
+            tensors: List[Union[Tensor, np.ndarray, DummyArray], ...],
             path_info: PathInfo,
-            target_size: int) -> Tuple[bool, Tuple[Tuple[int, str, int]], int]:
+            target_size: int
+    ) -> Tuple[bool, Tuple[Tuple[int, str, int], ...], int]:
         """
         Find the best split of tensors along some index such that each split
         occupies no more than `target_size` bytes.
@@ -134,7 +148,8 @@ class EinsumPlanner:
 
     def _prepare_input_arrays(
             self, arrays: Iterable[Union[Tensor, np.ndarray]],
-            plans: Iterable[str], async_transfer=True) -> List[Tensor]:
+            plans: Iterable[TensorStorage], async_transfer=True
+    ) -> List[Tensor]:
         """
         Prepare the list of arrays into GPU/GPU-ready tensors.
 
@@ -152,9 +167,9 @@ class EinsumPlanner:
         tensor_by_id = {}
         transfer_size = 0
         for array, plan in zip(arrays, plans):
-            assert plan in {TENSOR_LOCATION_CUDA, TENSOR_LOCATION_CPU}, \
+            assert plan in {TensorStorage.CPU, TensorStorage.CUDA}, \
                 "plan must be '%s' or '%s'" % (
-                    TENSOR_LOCATION_CUDA, TENSOR_LOCATION_CPU
+                    TensorStorage.CPU, TensorStorage.CUDA
                 )
             if id(array) in tensor_by_id:
                 continue
@@ -169,25 +184,25 @@ class EinsumPlanner:
 
             if (not torch_array.is_cuda or
                     torch_array.device != self.cuda_device):
-                if plan == TENSOR_LOCATION_CUDA:
+                if plan == TensorStorage.CUDA:
                     transfer_size += tensor_size(torch_array)
                     tensor_by_id[id(array)] = torch_array.to(
                         self.cuda_device, non_blocking=async_transfer)
-                elif plan == TENSOR_LOCATION_CPU:
+                elif plan == TensorStorage.CPU:
                     if not async_transfer:
                         tensor_by_id[id(array)] = torch_array
                     else:
                         tensor_by_id[id(array)] = torch_array.pin_memory()
             else:
                 tensor_by_id[id(array)] = torch_array
-                if plan == TENSOR_LOCATION_CUDA:
+                if plan == TensorStorage.CUDA:
                     logger.debug(
                         "You provided a tensor(%r, dtype=%s) on device %r. "
                         "This is not recommended as it may impact how we "
                         "allocate computations.",
                         tuple(torch_array.shape), str(torch_array.dtype),
                         self.cuda_device)
-                elif plan == TENSOR_LOCATION_CPU:
+                elif plan == TensorStorage.CPU:
                     logger.warning(
                         "You provided a tensor(%r, dtype=%s) on device %r, "
                         "which is not expected to be on GPU. This "
@@ -201,8 +216,9 @@ class EinsumPlanner:
         gpu_tensors = [tensor_by_id[id(x)] for x in arrays]
         return gpu_tensors
 
-    def _plan_einsum(self, formula, *tensor_shapes,
-                     tensor_ids=None, dtype_sz=4):
+    def _plan_einsum(self, formula: str, *tensor_shapes: Tuple[int, ...],
+                     tensor_ids: Optional[Iterable[int, ...]] = None,
+                     dtype_sz: int = 4) -> EinsumPlan:
         """
         Make a plan for performing einsum.
 
@@ -210,7 +226,6 @@ class EinsumPlanner:
         :param tensor_shapes: Shapes of the input tensors.
         :param tensor_ids: List of ids of the input tensors for de-duplication.
         :param dtype_sz: Byte size of the data type.
-        :param async_computation: Whether to use async computation.
         :return:
         """
         if tensor_ids is None:
@@ -265,10 +280,10 @@ class EinsumPlanner:
         if not need_split:
             logger.debug(
                 'All tensors fit CUDA memory, going ahead with torch.einsum.')
-            return (
-                path, path_info,
-                [TENSOR_LOCATION_CUDA] * len(tensor_shapes),
-                None, total_size)
+            return EinsumPlan(
+                path=path, path_info=path_info,
+                tensor_storage=[TensorStorage.CUDA] * len(tensor_shapes),
+                split_info=None, mem_required=total_size)
 
         assert len(splits) == 1, "Currently we only support one split."
         n_split, split_index, block_size = splits[0]
@@ -284,11 +299,11 @@ class EinsumPlanner:
                         path_info.size_dict[split_index] - block_size)
                 if total_size + delta_sz <= self.cuda_mem_limit:
                     total_size += delta_sz
-                    plan_by_id[tensor_id] = TENSOR_LOCATION_CUDA
+                    plan_by_id[tensor_id] = TensorStorage.CUDA
                 else:
-                    plan_by_id[tensor_id] = TENSOR_LOCATION_CPU
+                    plan_by_id[tensor_id] = TensorStorage.CPU
             else:
-                plan_by_id[tensor_id] = TENSOR_LOCATION_CUDA
+                plan_by_id[tensor_id] = TensorStorage.CUDA
 
         input_tensors_plan = [plan_by_id[x] for x in tensor_ids]
 
@@ -297,7 +312,10 @@ class EinsumPlanner:
             'tensor split info: %r, maximal CUDA memory usage: %s',
             input_tensors_plan, splits,
             humanize.naturalsize(total_size, binary=True))
-        return path, path_info, input_tensors_plan, splits, total_size
+        return EinsumPlan(
+            path=path, path_info=path_info,
+            tensor_storage=input_tensors_plan,
+            split_info=splits, mem_required=total_size)
 
     @staticmethod
     def check_dtypes(
@@ -391,7 +409,7 @@ class EinsumPlanner:
 
                 # Create the sliced tensor, transfer to GPU if necessary.
                 arg = tensor[indexer]
-                if plan == TENSOR_LOCATION_CPU:
+                if plan == TensorStorage.CPU:
                     arg = arg.to(
                         self.cuda_device, non_blocking=async_computation)
                     transfer_size += tensor_size(arg)
@@ -438,23 +456,25 @@ class EinsumPlanner:
             formula, *[x.shape for x in tensors],
             tensor_ids=[id(x) for x in tensors],
             dtype_sz=dtype_sz)
-        path, path_info, input_tensors_plan, splits, total_size = einsum_plan
 
         logger.debug('Preparing tensors...')
         tensors = self._prepare_input_arrays(
-            tensors, input_tensors_plan, async_transfer=async_computation)
+            tensors, einsum_plan.tensor_storage,
+            async_transfer=async_computation)
 
-        if not splits:
+        if not einsum_plan.split_info:
             # If no split is needed, it implies all input tensors are CUDA
             # tensors.
             with torch.no_grad():
                 result = oe.contract(
                     formula, *tensors,
-                    optimize=path, use_blas=True, backend='torch').cpu()
+                    optimize=einsum_plan.path,
+                    use_blas=True, backend='torch').cpu()
         else:
             with torch.no_grad():
                 result = self._batch_einsum(
                     formula, tensors, result_dtype, async_computation,
-                    path, path_info, input_tensors_plan, splits
+                    einsum_plan.path, einsum_plan.path_info,
+                    einsum_plan.tensor_storage, einsum_plan.split_info
                 )
         return result
