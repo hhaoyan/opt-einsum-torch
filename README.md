@@ -1,3 +1,8 @@
+# Installation
+```
+pip install git+https://github.com/hhaoyan/opt-einsum-torch
+ ```
+
 # opt-einsum-torch
 
 There have been many implementations of Einstein's summation. Numpy's 
